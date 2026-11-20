@@ -1,6 +1,6 @@
 {
   "name": "llmskillz",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Desktop manager for reading, editing, organizing, and installing custom LLM skills across Antigravity, Claude, and Codex.",
   "main": "electron/main.cjs",
   "scripts": {
@@ -23,6 +23,12 @@
       "electron/**/*",
       "LLMSkillz.ico",
       "LLMSkillz.png"
+    ],
+    "extraResources": [
+      {
+        "from": "skills",
+        "to": "skills"
+      }
     ],
     "win": {
       "target": [

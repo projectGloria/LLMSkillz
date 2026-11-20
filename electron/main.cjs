@@ -6,18 +6,65 @@ const crypto = require('crypto');
 
 const IGNORED_DIRS = new Set(['.git', 'node_modules', '.DS_Store', '__pycache__', '.vscode']);
 
+function getBundledSkillsPath() {
+  // Packaged builds ship the default library via extraResources (outside app.asar).
+  const candidates = app.isPackaged
+    ? [path.join(process.resourcesPath, 'skills')]
+    : [path.join(app.getAppPath(), 'skills'), path.join(process.cwd(), 'skills')];
+  return candidates.find((c) => fs.existsSync(c) && fs.statSync(c).isDirectory()) || null;
+}
+
 function getDefaultLibraryPath() {
-  const appDir = app.getAppPath();
-  const candidates = [
-    path.join(appDir, 'skills'),
-    path.join(process.cwd(), 'skills'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
-      return candidate;
+  if (app.isPackaged) {
+    // Must be writable: the install dir / app.asar is read-only.
+    return path.join(app.getPath('documents'), 'LLMSkillz', 'skills');
+  }
+  return getBundledSkillsPath() || path.join(app.getAppPath(), 'skills');
+}
+
+function hasSubdirectories(dirPath) {
+  try {
+    return fs
+      .readdirSync(dirPath, { withFileTypes: true })
+      .some((e) => e.isDirectory() && !IGNORED_DIRS.has(e.name) && !e.name.startsWith('.'));
+  } catch {
+    return false;
+  }
+}
+
+// First run: if the library is missing or empty, fill it with the bundled skills
+// plus any skills already installed in the targets. Never overwrites anything.
+function seedLibraryIfEmpty(config) {
+  const libraryPath = config.libraryPath;
+  if (!libraryPath || hasSubdirectories(libraryPath)) return;
+
+  fs.mkdirSync(libraryPath, { recursive: true });
+  const sources = [];
+  const bundled = getBundledSkillsPath();
+  if (bundled && path.resolve(bundled) !== path.resolve(libraryPath)) sources.push(bundled);
+  for (const target of config.targets) {
+    if (target.path && fs.existsSync(target.path)) sources.push(target.path);
+  }
+
+  for (const sourceRoot of sources) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(sourceRoot, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || IGNORED_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
+      const srcDir = path.join(sourceRoot, entry.name);
+      const destDir = path.join(libraryPath, entry.name);
+      if (fs.existsSync(destDir) || !findSkillEntryFile(srcDir)) continue;
+      try {
+        copyDirClean(srcDir, destDir);
+      } catch (err) {
+        console.error(`Failed seeding ${srcDir}:`, err);
+      }
     }
   }
-  return candidates[0];
 }
 
 function getDefaultTargets() {
@@ -413,6 +460,11 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  try {
+    seedLibraryIfEmpty(loadConfig());
+  } catch (err) {
+    console.error('Failed to seed library:', err);
+  }
   createWindow();
 
   app.on('activate', () => {
