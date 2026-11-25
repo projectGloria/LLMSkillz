@@ -23,10 +23,10 @@ Windows-first Electron 36 + React 19 + Vite 6 + TypeScript desktop app that mana
 - **IPC changes touch 3 files:** a new or renamed channel must be updated in `electron/main.cjs`, `electron/preload.cjs` and `src/types.ts` together.
 - **No typecheck for Electron files:** `tsconfig.json` includes only `src`, so `tsc` never checks `electron/*.cjs`. Keep them as `require` CommonJS and check by running `npm run dev`.
 - **Path safety:** any skill or file path coming from the renderer must go through `resolveSkillDir()` and then `resolveFileInsideDir()`. Never use `path.join` directly on renderer input.
-- **Installs are destructive:** `copyDirClean()` deletes the destination folder (`rm -rf`) before copying. `target:importSkill` overwrites the library folder with the same name.
-- **Flat install names:** targets receive `path.basename(skillDir)`, so the section is dropped. Two skills with the same folder name in different sections overwrite each other.
-- **Install status is a hash:** it compares a SHA-256 of the lowercased relative paths plus file bytes. Any byte change makes a skill `outdated`. `IGNORED_DIRS` entries are skipped.
-- **Entry file is case-insensitive:** `skill.md`, `SKILL.MD` and others are all accepted. Example: `skills/github-release-workflow/SKILL.MD`. New skills are written as `SKILL.md`.
+- **Replacements are staged:** `copyDirClean()` rejects overlapping paths and stages the copy before replacing the destination. Imports still replace an existing library folder with the same name.
+- **Flat install names:** targets receive `path.basename(skillDir)`, so installs reject matching folder names across sections before copying.
+- **Install status is local:** it compares a SHA-256 of the lowercased relative paths plus file bytes and checks the installed entry filename. `IGNORED_DIRS` entries are skipped.
+- **Entry filename:** the library accepts `SKILL.md` case-insensitively. Installs write the entry as `SKILL.md` for client discovery.
 - **Frontmatter parser is hand-rolled:** `parseFrontmatter()` supports flat `key: value` lines and indented continuation lines only. It has no YAML lists, nested maps or block scalars.
 - **Markdown preview:** `marked` output must always pass through `DOMPurify.sanitize` before `dangerouslySetInnerHTML` (`src/components/SkillWorkspace.tsx`).
 - **Vite `base: './'` is required:** production loads `dist/index.html` over `file://`. Don't change it or the port 5173 `strictPort` setting.

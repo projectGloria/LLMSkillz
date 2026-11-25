@@ -1,5 +1,5 @@
 ---
-name: github-repo-about
+name: github-repo-about_スキル
 description: Inspects the current local repository to draft and apply the GitHub About description and topics/tags via the GitHub CLI (gh). Trigger when the user asks to write, update, or generate the GitHub About section, description, or topics/tags.
 ---
 

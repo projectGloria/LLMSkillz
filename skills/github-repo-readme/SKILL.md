@@ -1,5 +1,5 @@
 ---
-name: github-repo-readme
+name: github-repo-readme_スキル
 description: Analyzes the current repository to generate a structured README.md with the app icon, a custom dark-mode SVG banner, silently captured UI screenshots, and a Mermaid "How it works" flowchart. Trigger when the user asks to write, create, generate, or overhaul a README.
 ---
 

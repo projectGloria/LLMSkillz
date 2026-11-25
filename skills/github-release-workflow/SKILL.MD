@@ -1,5 +1,5 @@
 ---
-name: github-release-workflow
+name: github-release-workflow_スキル
 description: Inspects the current local repository to generate a deterministic GitHub Actions workflow (.github/workflows/release.yml) that builds platform installers/archives, generates SHA256 checksums, and publishes them to GitHub Releases. Trigger when the user asks to create, set up, or update a GitHub Actions workflow for building installers and publishing releases.
 ---
 

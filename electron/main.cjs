@@ -156,14 +156,12 @@ function saveConfig(config) {
 }
 
 function findSkillEntryFile(dirPath) {
-  if (!fs.existsSync(dirPath)) return null;
+  if (!fs.statSync(dirPath, { throwIfNoEntry: false })?.isDirectory()) return null;
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.isFile() && entry.name.toLowerCase() === 'skill.md') {
-      return entry.name;
-    }
-  }
-  return null;
+  const entryNames = entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase() === 'skill.md')
+    .map((entry) => entry.name);
+  return entryNames.includes('SKILL.md') ? 'SKILL.md' : entryNames[0] ?? null;
 }
 
 function parseFrontmatter(content) {
@@ -218,7 +216,7 @@ function listFilesRecursive(dirPath, baseDir = dirPath) {
 }
 
 function hashDirectory(dirPath) {
-  if (!fs.existsSync(dirPath)) return null;
+  if (!fs.statSync(dirPath, { throwIfNoEntry: false })?.isDirectory()) return null;
   const files = listFilesRecursive(dirPath);
   const hash = crypto.createHash('sha256');
   for (const rel of files) {
@@ -274,7 +272,8 @@ function buildSkillRecord(skillDir, relativeId, section, targets) {
       installStatus[target.id] = 'not-installed';
     } else {
       const destHash = hashDirectory(destDir);
-      installStatus[target.id] = destHash === hash ? 'installed' : 'outdated';
+      const entryMatches = !entryFile || findSkillEntryFile(destDir) === 'SKILL.md';
+      installStatus[target.id] = destHash === hash && entryMatches ? 'installed' : 'outdated';
     }
   }
 
@@ -295,8 +294,7 @@ function buildSkillRecord(skillDir, relativeId, section, targets) {
   };
 }
 
-function scanSkills(config) {
-  const libraryPath = config.libraryPath;
+function findLibrarySkills(libraryPath) {
   if (!libraryPath || !fs.existsSync(libraryPath)) {
     return [];
   }
@@ -313,7 +311,7 @@ function scanSkills(config) {
     const hasDirectSkill = Boolean(findSkillEntryFile(dirPath));
 
     if (hasDirectSkill) {
-      skills.push(buildSkillRecord(dirPath, entry.name, null, config.targets));
+      skills.push({ dirPath, id: entry.name, section: null });
     } else {
       // Check if this folder is a category/section folder containing skill subfolders
       const children = fs.readdirSync(dirPath, { withFileTypes: true }).filter(
@@ -325,16 +323,22 @@ function scanSkills(config) {
         for (const child of nestedSkillDirs) {
           const childPath = path.join(dirPath, child.name);
           const relId = `${entry.name}/${child.name}`;
-          skills.push(buildSkillRecord(childPath, relId, entry.name, config.targets));
+          skills.push({ dirPath: childPath, id: relId, section: entry.name });
         }
       } else {
         // Folder without SKILL.md yet — still show it so user can initialize/edit it
-        skills.push(buildSkillRecord(dirPath, entry.name, null, config.targets));
+        skills.push({ dirPath, id: entry.name, section: null });
       }
     }
   }
 
-  return skills.sort((a, b) => a.section.localeCompare(b.section) || a.name.localeCompare(b.name));
+  return skills;
+}
+
+function scanSkills(config) {
+  return findLibrarySkills(config.libraryPath)
+    .map(({ dirPath, id, section }) => buildSkillRecord(dirPath, id, section, config.targets))
+    .sort((a, b) => a.section.localeCompare(b.section) || a.name.localeCompare(b.name));
 }
 
 function scanTargets(config, skills) {
@@ -388,21 +392,113 @@ function resolveFileInsideDir(baseDir, relPath) {
   return full;
 }
 
-function copyDirClean(srcDir, destDir) {
-  if (fs.existsSync(destDir)) {
-    fs.rmSync(destDir, { recursive: true, force: true });
+function resolveExistingAncestors(dirPath) {
+  try {
+    return fs.realpathSync.native(dirPath);
+  } catch (err) {
+    const parent = path.dirname(dirPath);
+    if (err.code !== 'ENOENT' || parent === dirPath) throw err;
+    return path.join(resolveExistingAncestors(parent), path.basename(dirPath));
   }
-  fs.mkdirSync(destDir, { recursive: true });
+}
 
+function pathsOverlap(firstPath, secondPath) {
+  const first = resolveExistingAncestors(path.resolve(firstPath));
+  const second = resolveExistingAncestors(path.resolve(secondPath));
+  const isInside = (parent, child) => {
+    const relative = path.relative(parent, child);
+    return !path.isAbsolute(relative) && relative !== '..' && !relative.startsWith('..' + path.sep);
+  };
+  return isInside(first, second) || isInside(second, first);
+}
+
+function assertDisjointPaths(first, second, message) {
+  if (pathsOverlap(first, second)) throw new Error(message);
+}
+
+function assertUniqueFolderName(skills, skill) {
+  const folderName = path.basename(skill.dirPath);
+  const conflict = skills.find((other) =>
+    other.id !== skill.id && path.basename(other.dirPath).toLowerCase() === folderName.toLowerCase()
+  );
+  if (conflict) {
+    throw new Error('Skills "' + skill.id + '" and "' + conflict.id +
+      '" share the install folder "' + folderName + '". Rename one skill folder first.');
+  }
+}
+
+function getInstallableSkill(config, skillId) {
+  const dirPath = resolveSkillDir(config, skillId);
+  const skills = findLibrarySkills(config.libraryPath);
+  const skill = skills.find((entry) => path.relative(entry.dirPath, dirPath) === '');
+  if (!skill) throw new Error('Skill not found in the library.');
+  assertUniqueFolderName(skills, skill);
+  return skill;
+}
+
+function getTargetSkillPath(config, target, skill) {
+  const destDir = path.join(target.path, path.basename(skill.dirPath));
+  assertDisjointPaths(config.libraryPath, destDir, 'The target skill folder overlaps the source library. Choose a different target folder.');
+  return destDir;
+}
+
+function copyDirContents(srcDir, destDir, normalizeEntry = false) {
+  fs.mkdirSync(destDir, { recursive: true });
   const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+  if (normalizeEntry && entries.filter((entry) => entry.name.toLowerCase() === 'skill.md').length > 1) {
+    throw new Error('Multiple entries match SKILL.md in ' + srcDir);
+  }
+
   for (const entry of entries) {
     if (IGNORED_DIRS.has(entry.name)) continue;
     const srcPath = path.join(srcDir, entry.name);
-    const destPath = path.join(destDir, entry.name);
+    const name = normalizeEntry && entry.isFile() && entry.name.toLowerCase() === 'skill.md'
+      ? 'SKILL.md'
+      : entry.name;
+    const destPath = path.join(destDir, name);
     if (entry.isDirectory()) {
-      copyDirClean(srcPath, destPath);
+      copyDirContents(srcPath, destPath);
     } else if (entry.isFile()) {
       fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+function copyDirClean(srcDir, destDir, normalizeEntry = false) {
+  assertDisjointPaths(srcDir, destDir, 'The source and destination skill folders overlap.');
+  const parent = path.dirname(destDir);
+  fs.mkdirSync(parent, { recursive: true });
+  const staging = fs.mkdtempSync(path.join(parent, '.llmskillz-copy-'));
+  const stagedSkill = path.join(staging, 'new');
+  const backup = path.join(staging, 'previous');
+  let preserveBackup = false;
+  try {
+    copyDirContents(srcDir, stagedSkill, normalizeEntry);
+    const existing = fs.lstatSync(destDir, { throwIfNoEntry: false });
+    if (existing && !existing.isDirectory()) {
+      throw new Error('The destination exists and is not a regular directory: ' + destDir);
+    }
+    if (existing) fs.renameSync(destDir, backup);
+    try {
+      fs.renameSync(stagedSkill, destDir);
+    } catch (err) {
+      if (existing) {
+        try {
+          fs.renameSync(backup, destDir);
+        } catch (restoreError) {
+          preserveBackup = true;
+          throw new Error('Could not restore the previous skill. Its files are in ' + backup, { cause: restoreError });
+        }
+      }
+      throw err;
+    }
+  } finally {
+    if (!preserveBackup) {
+      try {
+        fs.rmSync(staging, { recursive: true, force: true });
+      } catch (err) {
+        console.error('Could not clean up skill staging folder:', err);
+      }
     }
   }
 }
@@ -642,12 +738,9 @@ ipcMain.handle('skill:install', (_event, { skillId, targetId }) => {
   const target = config.targets.find((t) => t.id === targetId);
   if (!target) throw new Error('Target not found');
 
-  const skillDir = resolveSkillDir(config, skillId);
-  const folderName = path.basename(skillDir);
-  const destDir = path.join(target.path, folderName);
-
-  fs.mkdirSync(target.path, { recursive: true });
-  copyDirClean(skillDir, destDir);
+  const skill = getInstallableSkill(config, skillId);
+  const destDir = getTargetSkillPath(config, target, skill);
+  copyDirClean(skill.dirPath, destDir, true);
 
   const skills = scanSkills(config);
   const targets = scanTargets(config, skills);
@@ -659,11 +752,14 @@ ipcMain.handle('skill:uninstall', (_event, { skillId, targetId }) => {
   const target = config.targets.find((t) => t.id === targetId);
   if (!target) throw new Error('Target not found');
 
-  const skillDir = resolveSkillDir(config, skillId);
-  const folderName = path.basename(skillDir);
-  const destDir = path.join(target.path, folderName);
+  const skill = getInstallableSkill(config, skillId);
+  const destDir = getTargetSkillPath(config, target, skill);
 
-  if (fs.existsSync(destDir)) {
+  const existing = fs.lstatSync(destDir, { throwIfNoEntry: false });
+  if (existing && !existing.isDirectory()) {
+    throw new Error('The destination exists and is not a regular directory: ' + destDir);
+  }
+  if (existing) {
     fs.rmSync(destDir, { recursive: true, force: true });
   }
 
@@ -674,13 +770,13 @@ ipcMain.handle('skill:uninstall', (_event, { skillId, targetId }) => {
 
 ipcMain.handle('skill:installAllTargets', (_event, { skillId }) => {
   const config = loadConfig();
-  const skillDir = resolveSkillDir(config, skillId);
-  const folderName = path.basename(skillDir);
+  const skill = getInstallableSkill(config, skillId);
+  const destinations = config.targets
+    .filter((target) => target.enabled)
+    .map((target) => getTargetSkillPath(config, target, skill));
 
-  for (const target of config.targets) {
-    if (!target.enabled) continue;
-    fs.mkdirSync(target.path, { recursive: true });
-    copyDirClean(skillDir, path.join(target.path, folderName));
+  for (const destDir of destinations) {
+    copyDirClean(skill.dirPath, destDir, true);
   }
 
   const skills = scanSkills(config);
@@ -693,11 +789,14 @@ ipcMain.handle('target:syncAllSkills', (_event, { targetId }) => {
   const target = config.targets.find((t) => t.id === targetId);
   if (!target) throw new Error('Target not found');
 
-  const skills = scanSkills(config);
-  fs.mkdirSync(target.path, { recursive: true });
+  const skills = findLibrarySkills(config.libraryPath);
+  const copies = skills.map((skill) => {
+    assertUniqueFolderName(skills, skill);
+    return { srcDir: skill.dirPath, destDir: getTargetSkillPath(config, target, skill) };
+  });
 
-  for (const skill of skills) {
-    copyDirClean(skill.fullPath, path.join(target.path, skill.folderName));
+  for (const { srcDir, destDir } of copies) {
+    copyDirClean(srcDir, destDir, true);
   }
 
   const updatedSkills = scanSkills(config);
@@ -710,13 +809,15 @@ ipcMain.handle('target:importSkill', (_event, { targetId, folderName }) => {
   const target = config.targets.find((t) => t.id === targetId);
   if (!target) throw new Error('Target not found');
 
-  const srcDir = path.join(target.path, folderName);
+  if (!folderName || folderName === '.' || folderName === '..' || /[/\\:]/.test(folderName)) {
+    throw new Error('Invalid skill folder name.');
+  }
+  const srcDir = resolveFileInsideDir(target.path, folderName);
   if (!fs.existsSync(srcDir)) {
     throw new Error(`Folder "${folderName}" not found in ${target.name}`);
   }
 
-  const destDir = path.join(config.libraryPath, folderName);
-  fs.mkdirSync(config.libraryPath, { recursive: true });
+  const destDir = resolveSkillDir(config, folderName);
   copyDirClean(srcDir, destDir);
 
   const skills = scanSkills(config);

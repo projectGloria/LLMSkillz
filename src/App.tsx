@@ -133,7 +133,7 @@ export const App: React.FC = () => {
       const next = await window.llmSkillz.syncTargetAllSkills(targetId);
       applyState(next);
       const targetName = next.targets.find((t) => t.id === targetId)?.name || targetId;
-      notify(`Synced all skills to ${targetName}`);
+      notify(`Copied all skills to the ${targetName} folder`);
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Sync failed', 'error');
     }

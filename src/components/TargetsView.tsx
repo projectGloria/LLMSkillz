@@ -72,7 +72,7 @@ export const TargetsView: React.FC<TargetsViewProps> = ({
           <div>
             <h1 className="page-title">LLM Targets &amp; Sync</h1>
             <p className="page-subtitle">
-              Configure skill directories for Antigravity, Claude, and Codex (App &amp; CLI). Sync all skills or import existing ones into your library.
+              Copy or import skills using local folders. Install ChatGPT workspace skills separately from the ChatGPT Skills page.
             </p>
           </div>
         </div>
@@ -115,7 +115,7 @@ export const TargetsView: React.FC<TargetsViewProps> = ({
                             )}
                           </div>
                           <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text-secondary)' }}>
-                            {syncedCount} / {skills.length} synced
+                            {syncedCount} / {skills.length} copies match
                             {outdatedCount > 0 && (
                               <span style={{ color: 'var(--warning)', marginLeft: 8 }}>
                                 ({outdatedCount} outdated)
@@ -181,7 +181,7 @@ export const TargetsView: React.FC<TargetsViewProps> = ({
                         {syncedCount === skills.length && skills.length > 0 && (
                           <span className="badge badge-installed">
                             <CheckCircle2 size={12} />
-                            All Up to Date
+                            All Local Copies Match
                           </span>
                         )}
                       </div>

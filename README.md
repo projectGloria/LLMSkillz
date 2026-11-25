@@ -29,7 +29,7 @@ LLMSkillz is a local-first Electron + React + TypeScript desktop application tha
 
 - **Skill Library & Section Grouping** — Scans your source skills directory and loads each folder containing a `SKILL.md` (case-insensitive). Nested category folders automatically appear as collapsible sections in the sidebar with live text filtering across name, folder, section, and description.
 - **Markdown Authoring & Live Preview** — Edit `SKILL.md` and supporting files (e.g., `scripts/`, `references/`) in **Read**, **Split**, or **Edit** mode with sanitized GFM rendering (`marked` + `DOMPurify`), parsed YAML frontmatter display, unsaved-change indicators, and `Ctrl+S` saving.
-- **SHA-256 Drift Detection** — Computes a recursive SHA-256 digest of every file in each skill folder and compares it against each target directory to report `installed` (Synced), `outdated` (Modified locally), or `not-installed`.
+- **Local Copy Status** — Compares local skill files using SHA-256 and checks the installed `SKILL.md` filename. **Files match** reports a matching copy on disk. Each client discovers skills separately.
 - **Per-Target & Batch Installation** — Install, update, or uninstall a skill for individual targets (Antigravity App/CLI, Claude App/CLI, Codex App/CLI, or custom targets), push a single skill to all enabled targets at once, or sync your entire library to a target from the **Targets & Sync** view.
 - **Untracked Skill Import** — Detects skill folders that exist inside a target directory but not yet in your library, allowing one-click import back into your source library.
 - **Custom Targets & Configurable Library Path** — Point LLMSkillz at any local skills folder, add arbitrary custom target paths, toggle targets on or off, open any folder directly in File Explorer, or reset target paths to defaults.
@@ -55,7 +55,7 @@ flowchart LR
     A["Source Skills Library (skills/)"] --> B["Main Process Scanner (electron/main.cjs)"]
     B --> C["Parse SKILL.md Frontmatter & SHA-256 Hash"]
     C --> D{"Compare Target Folder Hash"}
-    D -- "Match" --> E["Status: Synced"]
+    D -- "Match" --> E["Status: Files match"]
     D -- "Mismatch" --> F["Status: Modified Locally"]
     D -- "Missing" --> G["Status: Not Installed"]
     E & F & G --> H["React UI via Context-Isolated IPC"]
@@ -127,6 +127,8 @@ skills/
 | Claude CLI | `claude` | `cli` | `%USERPROFILE%\.claude\skills` |
 | Codex App | `codex` | `app` | `%USERPROFILE%\.codex\skills` |
 | Codex CLI | `codex` | `cli` | `%USERPROFILE%\.agents\skills` |
+
+ChatGPT workspace skills are installed separately through [ChatGPT Skills](https://help.openai.com/en/articles/20001066-skills-in-chatgpt).
 
 You can add additional custom targets or restore the defaults at any time from **Settings**.
 

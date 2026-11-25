@@ -161,8 +161,8 @@ export const SkillWorkspace: React.FC<SkillWorkspaceProps> = ({
   };
 
   const renderStatusText = (state: InstallState) => {
-    if (state === 'installed') return 'Up to date';
-    if (state === 'outdated') return 'Modified locally';
+    if (state === 'installed') return 'On disk';
+    if (state === 'outdated') return 'Update available';
     return 'Not installed';
   };
 
@@ -223,7 +223,7 @@ export const SkillWorkspace: React.FC<SkillWorkspaceProps> = ({
         <div className="target-strip-header">
           <span className="target-strip-label">Install to LLM Targets</span>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            Copies <code style={{ fontFamily: 'var(--font-mono)' }}>{skill.folderName}/</code> into each target&apos;s skills folder
+            Compares local files in <code style={{ fontFamily: 'var(--font-mono)' }}>{skill.folderName}/</code>. Each app discovers skills separately.
           </span>
         </div>
 
@@ -285,7 +285,7 @@ export const SkillWorkspace: React.FC<SkillWorkspaceProps> = ({
                     <>
                       <span className="badge badge-installed" style={{ padding: '2px 6px' }}>
                         <CheckCircle2 size={11} />
-                        Synced
+                        Files match
                       </span>
                       <button
                         className="btn btn-ghost btn-xs"
